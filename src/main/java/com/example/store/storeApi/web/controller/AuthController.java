@@ -1,74 +1,147 @@
 package com.example.store.storeApi.web.controller;
 
-
+import com.example.store.storeApi.domain.service.*;
 import com.example.store.storeApi.persistence.Data.*;
-import com.example.store.storeApi.persistence.crud.*;
 import com.example.store.storeApi.persistence.entity.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.example.store.storeApi.persistence.repository.*;
+import com.example.store.storeApi.web.config.exception.*;
+import com.example.store.storeApi.web.response.*;
+import com.example.store.storeApi.web.security.*;
+import org.springframework.beans.factory.annotation.*;
+import org.springframework.http.*;
+import org.springframework.security.authentication.*;
+import org.springframework.security.core.*;
+import org.springframework.security.core.context.*;
+import org.springframework.security.crypto.password.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.*;
 
-import java.util.Collections;
+import java.net.*;
+import java.util.*;
 
+@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
-    @Autowired
-    private AuthenticationManager authenticationManager;
 
     @Autowired
-    private UserRepository userRepository;
+    AuthenticationManager authenticationManager;
 
     @Autowired
-    private RoleRepository roleRepository;
+    UserRepository userRepository;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    RoleRepository roleRepository;
+
+    @Autowired
+    PasswordEncoder encoder;
+
+    @Autowired
+    JwtProvider jwtProvider;
+
+    @Autowired
+    private RefreshTokenService refreshTokenService;
+
+    @Autowired
+    private UserDeviceService userDeviceService;
 
     @PostMapping("/signin")
-    public ResponseEntity<String> authenticateUser(@RequestBody LoginDTO loginDto){
-        Authentication authentication = authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(
-                loginDto.getUsernameOrEmail(), loginDto.getPassword()));
+    public ResponseEntity<?> authenticateUser( @RequestBody LoginForm loginRequest) {
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        return new ResponseEntity<>("User signed-in successfully!.", HttpStatus.OK);
+        User user = userRepository.findByEmail(loginRequest.getEmail())
+                .orElseThrow(() -> new RuntimeException("Fail! -> Cause: User not found."));
+
+        if (user.getActive()) {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getEmail(),
+                            loginRequest.getPassword()
+                    )
+            );
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwtToken = jwtProvider.generateJwtToken(authentication);
+            userDeviceService.findByUserId(user.getId())
+                    .map(UserDevice::getRefreshToken)
+                    .map(RefreshToken::getId)
+                    .ifPresent(refreshTokenService::deleteById);
+
+            UserDevice userDevice = userDeviceService.createUserDevice(loginRequest.getDeviceInfo());
+            RefreshToken refreshToken = refreshTokenService.createRefreshToken();
+            userDevice.setUser(user);
+            userDevice.setRefreshToken(refreshToken);
+            refreshToken.setUserDevice(userDevice);
+            refreshToken = refreshTokenService.save(refreshToken);
+            return ResponseEntity.ok(new JwtResponse(jwtToken, refreshToken.getToken(), jwtProvider.getExpiryDuration()));
+
+
+        }
+        return ResponseEntity.badRequest().body(new ApiResponse(false, "User has been deactivated/locked !!"));
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<?> registerUser(@RequestBody SignUpDto signUpDto){
-
-        // add check for username exists in a DB
-        if(userRepository.existsByUsername(signUpDto.getUsername())){
-            return new ResponseEntity<>("Username is already taken!", HttpStatus.BAD_REQUEST);
+    public ResponseEntity<?> registerUser(@RequestBody SignUpForm signUpRequest) {
+        if(userRepository.existsByEmail(signUpRequest.getEmail())) {
+            return new ResponseEntity<String>("Fail -> Email is already in use!",
+                    HttpStatus.BAD_REQUEST);
         }
 
-        // add check for email exists in DB
-        if(userRepository.existsByEmail(signUpDto.getEmail())){
-            return new ResponseEntity<>("Email is already taken!", HttpStatus.BAD_REQUEST);
-        }
-
-        // create user object
+        // Creating user's account
         User user = new User();
-        user.setName(signUpDto.getName());
-        user.setUsername(signUpDto.getUsername());
-        user.setEmail(signUpDto.getEmail());
-        user.setPassword(passwordEncoder.encode(signUpDto.getPassword()));
+        user.setName(signUpRequest.getName());
+        user.setEmail(signUpRequest.getEmail());
+        user.setPassword(encoder.encode(signUpRequest.getPassword()));
 
-        Role roles = roleRepository.findByName("ROLE_USER").get();
-        user.setRoles(Collections.singleton(roles));
+        Set<String> strRoles = Collections.singleton(signUpRequest.getRole());
+        Set<Role> roles = new HashSet<>();
 
-        userRepository.save(user);
+        strRoles.forEach(role -> {
+            switch(role) {
+                case "admin":
+                    Role adminRole = roleRepository.findByName(RoleName.ROLE_ADMIN)
+                            .orElseThrow(() -> new RuntimeException("Fail! -> Cause: User Role not found."));
+                    roles.add(adminRole);
 
-        return new ResponseEntity<>("User registered successfully", HttpStatus.OK);
+                    break;
+                default:
+                    Role userRole = roleRepository.findByName(RoleName.ROLE_USER)
+                            .orElseThrow(() -> new RuntimeException("Fail! -> Cause: User Role not found."));
+                    roles.add(userRole);
+            }
+        });
 
+        user.setRoles(roles);
+        user.activate();
+        User result = userRepository.save(user);
+
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentContextPath().path("/user/me")
+                .buildAndExpand(result.getId()).toUri();
+
+        return ResponseEntity.created(location)
+                .body(new ApiResponse(true, "User registered successfully!"));
+    }
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refreshJwtToken(@RequestBody TokenRefreshRequest tokenRefreshRequest) {
+
+        String requestRefreshToken = tokenRefreshRequest.getRefreshToken();
+
+        Optional<String> token = Optional.of(refreshTokenService.findByToken(requestRefreshToken)
+                .map(refreshToken -> {
+                    refreshTokenService.verifyExpiration(refreshToken);
+                    userDeviceService.verifyRefreshAvailability(refreshToken);
+                    refreshTokenService.increaseCount(refreshToken);
+                    return refreshToken;
+                })
+                .map(RefreshToken::getUserDevice)
+                .map(UserDevice::getUser)
+                .map(u -> jwtProvider.generateTokenFromUser(u))
+                .orElseThrow(() -> new TokenRefreshException(requestRefreshToken, "Missing refresh token in database.Please login again")));
+        return ResponseEntity.ok().body(new JwtResponse(token.get(), tokenRefreshRequest.getRefreshToken(), jwtProvider.getExpiryDuration()));
+    }
+
+    @GetMapping("/checkEmailAvailability")
+    public UserIdentityAvailability checkEmailAvailability(@RequestParam(value = "email") String email) {
+        Boolean isAvailable = !userRepository.existsByEmail(email);
+        return new UserIdentityAvailability(isAvailable);
     }
 }
