@@ -55,6 +55,12 @@ public class JwtProvider {
                 .compact();
     }
 
+    public String getUserFromJwtToken(String token){
+        return Jwts.parser()
+                .setSigningKey("HelloWorld")
+                .parseClaimsJws(token)
+                .getBody().getId();
+    }
     public String getUserNameFromJwtToken(String token) {
         return Jwts.parser()
                 .setSigningKey("HelloWorld")

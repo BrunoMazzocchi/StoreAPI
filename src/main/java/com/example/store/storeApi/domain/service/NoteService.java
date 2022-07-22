@@ -17,9 +17,16 @@ public class NoteService {
         return noteRepository.save(note);
     }
 
+    public void saveNoteUser(int noteId, int userId) {
+        noteRepository.saveNoteUser(noteId, userId);
+    }
+
     public List<Note> findByUserId(int userId) {
         return noteRepository.findByUserId(userId);
     }
 
+    public int getNotesId(){
+        return noteRepository.getNotesId();
+    }
 
 }

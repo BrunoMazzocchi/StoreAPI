@@ -2,7 +2,7 @@ package com.example.store.storeApi.web.controller;
 
 import com.example.store.storeApi.domain.event.*;
 import com.example.store.storeApi.domain.service.*;
-import com.example.store.storeApi.persistence.Data.*;
+import com.example.store.storeApi.persistence.data.*;
 import com.example.store.storeApi.persistence.entity.*;
 import com.example.store.storeApi.persistence.repository.*;
 import com.example.store.storeApi.web.config.exception.*;

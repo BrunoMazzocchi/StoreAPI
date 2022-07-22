@@ -1,6 +1,7 @@
 package com.example.store.storeApi.persistence.entity;
 
 import lombok.*;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.*;
 
 import javax.persistence.*;
@@ -15,7 +16,7 @@ import java.util.*;
         @UniqueConstraint(columnNames = {"title"}),
         @UniqueConstraint(columnNames = {"description"})
 })
-public class Note implements Serializable {
+public class Note  {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long id;

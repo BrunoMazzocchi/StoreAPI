@@ -1,6 +1,6 @@
 package com.example.store.storeApi.domain.event;
 
-import com.example.store.storeApi.persistence.Data.*;
+import com.example.store.storeApi.persistence.data.*;
 import lombok.*;
 import org.springframework.context.*;
 

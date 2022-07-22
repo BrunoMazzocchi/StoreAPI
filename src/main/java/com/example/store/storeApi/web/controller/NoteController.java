@@ -3,6 +3,7 @@ package com.example.store.storeApi.web.controller;
 import com.example.store.storeApi.domain.service.*;
 import com.example.store.storeApi.persistence.entity.*;
 import com.example.store.storeApi.persistence.repository.*;
+import com.example.store.storeApi.web.config.exception.*;
 import com.example.store.storeApi.web.security.*;
 import org.springframework.beans.factory.annotation.*;
 import org.springframework.http.*;
@@ -27,6 +28,10 @@ public class NoteController {
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Autowired
+    private UserRepository userRepository;
+
+
     protected String getJwt(HttpServletRequest request) {
         String authHeader = request.getHeader("Authorization");
 
@@ -50,6 +55,14 @@ public class NoteController {
         return notes;
     }
 
+    @PostMapping("/save")
+    public ResponseEntity<Note> save(@RequestBody Note note, HttpServletRequest request){
+        int userId = Integer.parseInt(tokenProvider.getUserFromJwtToken(getJwt(request)));
+        noteSerivce.save(note);
+        int lastNoteId = noteSerivce.getNotesId();
+        noteSerivce.saveNoteUser(lastNoteId, userId);
 
+        return new ResponseEntity<>(note, HttpStatus.CREATED);
+    }
 
 }

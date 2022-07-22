@@ -4,6 +4,7 @@ import com.example.store.storeApi.persistence.entity.*;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.*;
 import org.springframework.stereotype.*;
+import org.springframework.transaction.annotation.*;
 
 import java.util.*;
 @Repository
@@ -19,5 +20,12 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
     List<Note> findByUserId(@Param("userId") int userId);
 
 
+    Note save(Note note);
 
+
+    @Query(value = "INSERT INTO notes.note_user (note_id, user_id) VALUES ('?', '?')", nativeQuery = true)
+    void saveNoteUser(int noteId, int userId);
+
+    @Query(value = "select notes.notes.id from notes.notes ORDER BY notes.id DESC LIMIT 1", nativeQuery = true)
+    int getNotesId();
 }
