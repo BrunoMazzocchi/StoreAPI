@@ -13,6 +13,7 @@ import org.springframework.security.authentication.*;
 import org.springframework.security.core.*;
 import org.springframework.security.core.context.*;
 import org.springframework.security.crypto.password.*;
+import org.springframework.stereotype.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.*;
 
@@ -20,7 +21,7 @@ import java.net.*;
 import java.util.*;
 
 @CrossOrigin(origins = "*", maxAge = 3600)
-@RestController
+@Controller
 @RequestMapping("/api/auth")
 public class AuthController {
 
@@ -45,8 +46,22 @@ public class AuthController {
     @Autowired
     private UserDeviceService userDeviceService;
 
+    @GetMapping("/login")
+    String login(Map<String, Object> model){
+    LoginForm loginRequest = new LoginForm();
+    model.put("loginRequest", loginRequest);
+
+    List<String> loginFormData = new ArrayList<>();
+
+    loginFormData.add("email");
+    loginFormData.add("password");
+    model.put("loginFormData", loginFormData);
+    return "loginform";
+
+    }
+
     @PostMapping("/signin")
-    public ResponseEntity<?> authenticateUser( @RequestBody LoginForm loginRequest) {
+    public ResponseEntity<?> authenticateUser( @ModelAttribute("loginRequest") LoginForm loginRequest) {
 
         User user = userRepository.findByEmail(loginRequest.getEmail())
                 .orElseThrow(() -> new RuntimeException("Fail! -> Cause: User not found."));
@@ -65,15 +80,24 @@ public class AuthController {
                     .map(RefreshToken::getId)
                     .ifPresent(refreshTokenService::deleteById);
 
-            UserDevice userDevice = userDeviceService.createUserDevice(loginRequest.getDeviceInfo());
+
+            DeviceInfo deviceInfo = new DeviceInfo();
+            deviceInfo.setDeviceId("1");
+            deviceInfo.setDeviceType("1");
+
+
+            //Dev test, still waiting to implement user device creation
+            UserDevice userDevice = userDeviceService.createUserDevice(deviceInfo);
             RefreshToken refreshToken = refreshTokenService.createRefreshToken();
             userDevice.setUser(user);
             userDevice.setRefreshToken(refreshToken);
             refreshToken.setUserDevice(userDevice);
             refreshToken = refreshTokenService.save(refreshToken);
+
+            System.out.println( ResponseEntity.ok(new JwtResponse(jwtToken, refreshToken.getToken(), jwtProvider.getExpiryDuration())));
+
+
             return ResponseEntity.ok(new JwtResponse(jwtToken, refreshToken.getToken(), jwtProvider.getExpiryDuration()));
-
-
         }
         return ResponseEntity.badRequest().body(new ApiResponse(false, "User has been deactivated/locked !!"));
     }
